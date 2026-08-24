@@ -18,8 +18,9 @@ Thumbs.db
 .vscode/
 
 # Data (keep folder, ignore contents)
-data/*
-!data/.gitkeep
+backend/data/*
+!backend/data/.gitkeep
+!backend/data/README.md
 
 # Docker
 *.log
