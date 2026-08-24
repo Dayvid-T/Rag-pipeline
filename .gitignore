@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Data (keep folder, ignore contents)
+backend/data/*
+!backend/data/.gitkeep
+!backend/data/README.md
+
+# Docker
+*.log
