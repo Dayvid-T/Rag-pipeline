@@ -18,11 +18,28 @@ TODO (build-out steps):
 """
 
 from typing import List, Dict
+from pathlib import Path
+from pypdf import PdfReader
+
+
 
 
 def load_documents(path: str) -> List[Dict]:
-    """Load raw documents from `path`. Not yet implemented."""
-    raise NotImplementedError("Phase 2: implement document loading")
+
+    folder = Path(path)
+    documents = []
+    for f in folder.iterdir():
+        if f.suffix.lower() == ".txt":
+            #this is the palce holder
+            documents.append({"text": f.read_text(), "source": f.name})
+
+        elif f.suffix.lower() == ".pdf":
+            reader = PdfReader(f)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text()
+            documents.append({"text": text, "source": f.name})
+    return documents
 
 
 def chunk_documents(documents: List[Dict]) -> List[Dict]:
