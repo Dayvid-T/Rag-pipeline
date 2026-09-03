@@ -14,7 +14,7 @@ load_dotenv()
 
 
 class Settings:
-    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     pinecone_api_key: str = os.getenv("PINECONE_API_KEY", "")
     pinecone_index_name: str = os.getenv("PINECONE_INDEX_NAME", "rag-pipeline-qa")
     pinecone_environment: str = os.getenv("PINECONE_ENVIRONMENT", "")

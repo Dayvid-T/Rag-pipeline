@@ -18,7 +18,7 @@
 ## Service model choices (IaaS / PaaS / SaaS)
 | Component            | Service                  | Layer |
 |-----------------------|---------------------------|-------|
-| LLM                   | Anthropic API              | SaaS  |
+| LLM                   | Google Gemini API          | SaaS  |
 | Vector DB + hybrid search | Pinecone                | SaaS  |
 | Container registry     | AWS ECR                   | managed storage |
 | Compute / hosting       | AWS App Runner            | PaaS  |

@@ -3,7 +3,7 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 
 # LLM + vector DB clients
-anthropic==0.34.2
+google-genai==2.22.0
 pinecone-client==5.0.1
 
 # Document loading / chunking
@@ -12,8 +12,8 @@ langchain-text-splitters==0.2.4
 
 # Utilities
 python-dotenv==1.0.1
-pydantic==2.9.2
+pydantic==2.12.5
 
 # Testing
 pytest==8.3.3
-httpx==0.27.2
+httpx==0.28.1
