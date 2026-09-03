@@ -20,6 +20,7 @@ TODO (build-out steps):
 from typing import List, Dict
 from pathlib import Path
 from pypdf import PdfReader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 
@@ -43,5 +44,15 @@ def load_documents(path: str) -> List[Dict]:
 
 
 def chunk_documents(documents: List[Dict]) -> List[Dict]:
-    """Split loaded documents into retrievable chunks. Not yet implemented."""
-    raise NotImplementedError("Phase 2: implement chunking")
+    """Split loaded documents into retrievable chunks."""
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    chunks = []
+    for doc in documents:
+        pieces = splitter.split_text(doc["text"])
+        for i, piece in enumerate(pieces):
+            chunks.append({
+                "text": piece,
+                "source": doc["source"],
+                "chunk_id": f"{doc['source']}::{i}",
+            })
+    return chunks
