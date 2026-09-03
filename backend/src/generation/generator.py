@@ -21,7 +21,7 @@ from google import genai
 
 from src.config import settings
 
-GENERATION_MODEL = "gemini-3.6-flash"
+GENERATION_MODEL = "gemini-3.1-flash-lite"
 
 # Lazily-created connection, shared across calls in this process - same
 # reasoning as hybrid_search.py's _get_index(): importing this module should
