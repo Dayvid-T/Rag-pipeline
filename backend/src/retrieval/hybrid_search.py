@@ -1,37 +1,37 @@
-"""
-Retrieval layer: embed chunks, store them, and retrieve the most relevant
-ones for a query using hybrid (dense + sparse) search.
-
-Phase: 2 (local retrieval) and Phase 3 (hybrid search)
-Why it exists: this is the core of the RAG system. Pure semantic (dense
-vector) search alone misses exact terms, codes, and names; combining it
-with sparse keyword search is the standard fix. See Project 1 Deep Dive,
-Phase 3, for the reasoning.
-
-TODO (build-out steps):
-  1. embed_chunks(chunks): call the embedding model and upsert vectors +
-     metadata into the vector index (Pinecone).
-  2. dense_search(query, top_k): semantic similarity search.
-  3. sparse_search(query, top_k): keyword/BM25-style search.
-  4. hybrid_search(query, top_k): combine and re-rank results from both.
-"""
-
 from typing import List, Dict
 
 from pinecone import Pinecone
+from rank_bm25 import BM25Okapi
 
 from src.config import settings
+from src.ingestion.loader import load_documents, chunk_documents
 
 # Pinecone's hosted embedding model. Outputs 1024-dimension vectors - the
 # index was created with dimension=1024 specifically to match this.
 EMBEDDING_MODEL = "multilingual-e5-large"
 
-# Lazily-created connection, shared across calls in this process. Created on
-# first use (not at import time) so importing this module never makes a
-# network call on its own - matters for testing and for anything that
-# imports this file without actually needing Pinecone yet.
+# Where sparse_search rebuilds its local keyword index from. Must be the
+# same folder embed_chunks was last pointed at, so dense and sparse search
+# are searching the same corpus.
+DATA_DIR = "data"
+
+# How many results RRF pulls from each ranker before fusing - wider than the
+# final top_k so a chunk that's #1 in one ranker but absent from the other's
+# top_k still gets a fair shot at the merged result.
+FETCH_MULTIPLIER = 3
+
+# Standard constant for Reciprocal Rank Fusion (RRF). Not sensitive to tuning
+# for a project this size - 60 is the commonly-cited default in the RRF
+# literature.
+RRF_K = 60
+
+# Lazily-created connections/indexes, shared across calls in this process.
+# Created on first use (not at import time) so importing this module never
+# makes a network call or reads the local data/ folder on its own.
 _pc = None
 _index = None
+_bm25 = None
+_bm25_chunks = None
 
 
 def _get_index():
@@ -42,6 +42,19 @@ def _get_index():
         index_info = _pc.describe_index(settings.pinecone_index_name)
         _index = _pc.Index(host=index_info.host)
     return _index
+
+
+def _get_bm25():
+    """
+    Build (once, lazily) a local BM25 index over the same chunks
+    embed_chunks was last pointed at, for sparse_search to query.
+    """
+    global _bm25, _bm25_chunks
+    if _bm25 is None:
+        _bm25_chunks = chunk_documents(load_documents(DATA_DIR))
+        tokenized = [chunk["text"].lower().split() for chunk in _bm25_chunks]
+        _bm25 = BM25Okapi(tokenized)
+    return _bm25, _bm25_chunks
 
 
 def embed_chunks(chunks: List[Dict]) -> None:
@@ -69,14 +82,8 @@ def embed_chunks(chunks: List[Dict]) -> None:
     index.upsert(vectors=vectors)
 
 
-def hybrid_search(query: str, top_k: int = 5) -> List[Dict]:
-    """
-    Return the top_k most relevant chunks for `query`.
-
-    Dense (semantic) search only for now - sparse/keyword search gets added
-    on top of this later (see the module TODO above); this is the Phase 2
-    "dense search first" milestone from the README build order.
-    """
+def dense_search(query: str, top_k: int = 5) -> List[Dict]:
+    """Semantic similarity search: embed `query`, search Pinecone."""
     index = _get_index()
 
     result = _pc.inference.embed(
@@ -90,9 +97,63 @@ def hybrid_search(query: str, top_k: int = 5) -> List[Dict]:
 
     return [
         {
+            "chunk_id": match["id"],
             "text": match["metadata"]["text"],
             "source": match["metadata"]["source"],
             "score": match["score"],
         }
         for match in matches["matches"]
+    ]
+
+
+def sparse_search(query: str, top_k: int = 5) -> List[Dict]:
+    """Keyword search: BM25 over the locally-chunked documents."""
+    bm25, chunks = _get_bm25()
+
+    scores = bm25.get_scores(query.lower().split())
+    ranked = sorted(zip(chunks, scores), key=lambda pair: pair[1], reverse=True)
+
+    return [
+        {
+            "chunk_id": chunk["chunk_id"],
+            "text": chunk["text"],
+            "source": chunk["source"],
+            "score": float(score),
+        }
+        for chunk, score in ranked[:top_k]
+    ]
+
+
+def hybrid_search(query: str, top_k: int = 5) -> List[Dict]:
+    """
+    Return the top_k most relevant chunks for `query`, combining dense
+    (semantic) and sparse (keyword) search via Reciprocal Rank Fusion (RRF).
+
+    RRF combines two ranked lists using each result's *position* in its own
+    list rather than its raw score - avoids having to normalize dense's
+    cosine similarity (0-1) against BM25's unbounded scores, which aren't
+    on comparable scales.
+    """
+    fetch_k = top_k * FETCH_MULTIPLIER
+    dense_results = dense_search(query, top_k=fetch_k)
+    sparse_results = sparse_search(query, top_k=fetch_k)
+
+    fused_scores: Dict[str, float] = {}
+    chunks_by_id: Dict[str, Dict] = {}
+
+    for ranked_list in (dense_results, sparse_results):
+        for rank, chunk in enumerate(ranked_list):
+            chunk_id = chunk["chunk_id"]
+            fused_scores[chunk_id] = fused_scores.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank)
+            chunks_by_id[chunk_id] = chunk
+
+    ranked_ids = sorted(fused_scores, key=lambda cid: fused_scores[cid], reverse=True)
+
+    return [
+        {
+            "text": chunks_by_id[cid]["text"],
+            "source": chunks_by_id[cid]["source"],
+            "score": fused_scores[cid],
+        }
+        for cid in ranked_ids[:top_k]
     ]
