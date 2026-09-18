@@ -24,3 +24,11 @@ backend/data/*
 
 # Docker
 *.log
+
+# Local dev tooling
+.claude/
+.pytest_cache/
+
+# Evaluation run artifacts (keep the folder)
+evaluation/reports/*
+!evaluation/reports/.gitkeep

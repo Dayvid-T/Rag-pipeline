@@ -1,0 +1,35 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Pushes only deploy once the repo variable DEPLOY_ON_PUSH is set to "true";
+    # manual runs always deploy.
+    if: github.event_name == 'workflow_dispatch' || vars.DEPLOY_ON_PUSH == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Build, push and deploy
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          APP_RUNNER_ECR_ACCESS_ROLE_ARN: ${{ secrets.APP_RUNNER_ECR_ACCESS_ROLE_ARN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'rag-pipeline-qa' }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: bash scripts/deploy.sh

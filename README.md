@@ -4,36 +4,31 @@ A containerized Retrieval-Augmented Generation (RAG) pipeline that answers
 questions over a set of documents, using hybrid (semantic + keyword) search
 and deployed on AWS through managed PaaS/SaaS services.
 
-This is **Project 1** of a three-project series building toward AI
-Security & Governance: this project builds the working system, Project 2
-adds an automated evaluation suite (hallucination rate, latency), and
-Project 3 adds prompt-injection guardrails and bias filtering at the API
-boundary.
-
-## Status: skeleton
-
-This repo currently defines the structure and interfaces; core logic is
-stubbed with `NotImplementedError` and TODO comments pointing at the build
-phase each piece belongs to. See `docs/architecture.md` for the full flow
-and the service-model (IaaS/PaaS/SaaS) choices behind it.
+This repo holds **Project 1** (the working system) and **Project 2** (an
+automated evaluation suite measuring hallucination rate and latency) of a
+three-project series building toward AI Security & Governance. Project 3
+adds prompt-injection guardrails and bias filtering at the API boundary.
 
 ## Repo layout
 
 ```
 backend/
   src/
-    config.py            # env/config loading
-    ingestion/loader.py  # load + chunk documents            (Phase 2)
-    retrieval/hybrid_search.py  # embed + hybrid search       (Phase 2/3)
-    generation/generator.py     # grounded answer generation  (Phase 2)
-    api/routes.py         # FastAPI app, /query and /health   (Phase 2/4)
-  data/                    # local documents for testing (gitignored)
-  tests/                   # backend test suite
-  requirements.txt
-  Dockerfile               # containerization                (Phase 4)
-frontend/                  # web UI calling POST /query (built after backend works)
-docs/architecture.md       # flow + service-model choices
-.github/workflows/         # CI (runs backend tests on every push)
+    config.py                   # env/config loading
+    ingestion/loader.py         # load (PyMuPDF) + chunk documents
+    retrieval/hybrid_search.py  # Pinecone dense + BM25 sparse, RRF fusion
+    generation/generator.py     # grounded answer generation (Gemini)
+    citation/citation.py        # IEEE / APA reference generation per document
+    api/routes.py               # FastAPI app: /query, /documents, /health, static UI
+  data/                         # local documents for bulk indexing (gitignored)
+  tests/
+frontend/                       # Vite + TypeScript UI, built into the image
+evaluation/                     # Project 2: eval suite (see evaluation/README.md)
+scripts/deploy.sh               # ECR push + App Runner create/update
+Dockerfile                      # multi-stage: build frontend, run API
+docs/architecture.md            # flow + service-model choices
+docs/deployment.md              # AWS setup and deploy steps
+.github/workflows/              # tests.yml (all suites), deploy.yml
 ```
 
 ## Local setup
@@ -47,24 +42,57 @@ cp .env.example .env        # fill in your API keys
 uvicorn src.api.routes:app --reload
 ```
 
-Then check `GET http://localhost:8000/health`.
+Then check `GET http://localhost:8000/health`. For the UI during
+development run `npm install && npm run dev` in `frontend/` (it proxies to
+the backend); for the production layout run `npm run build` and the
+backend serves `frontend/dist` at `/`.
 
-Run the backend tests from inside `backend/`:
+Add documents either by uploading them in the UI (`POST /documents`,
+`.pdf` or `.txt`), or by bulk-indexing everything in `backend/data/`:
 
 ```bash
-pytest
+python -c "from src.ingestion.loader import *; from src.retrieval.hybrid_search import embed_chunks; embed_chunks(chunk_documents(load_documents('data')))"
 ```
 
-## Build order
+Pinecone holds the only copy of the corpus, so uploads persist across
+restarts and redeploys.
 
-1. Implement `backend/src/ingestion/loader.py` - load and chunk documents from `backend/data/`.
-2. Implement `backend/src/retrieval/hybrid_search.py` (dense search first).
-3. Implement `backend/src/generation/generator.py` - wire retrieval into a grounded prompt.
-4. Wire both into the `/query` endpoint in `backend/src/api/routes.py`.
-5. Add sparse/keyword search to `hybrid_search.py` for true hybrid retrieval.
-6. Build and run the Docker image locally (`cd backend && docker build -t rag-pipeline-qa .`).
-7. Deploy: push image to AWS ECR, run it on AWS App Runner.
-8. Build `frontend/` against the working `/query` endpoint.
+Each document also has a **Cite** button (`GET /documents/{source}/citation`)
+that detects title/authors/year with Gemini and formats a reference in
+IEEE and APA 7 style to copy.
+
+## Tests
+
+```bash
+cd backend && pytest
+cd frontend && npm test
+cd evaluation && pytest
+```
+
+All three suites mock external services; CI runs them on every push.
+
+## Docker
+
+```bash
+docker build -t rag-pipeline-qa .
+docker run --rm -p 8000:8000 --env-file backend/.env rag-pipeline-qa
+```
+
+## Deploy
+
+`bash scripts/deploy.sh` (or the *Deploy* GitHub Actions workflow) pushes
+the image to ECR and creates/updates the App Runner service. Prerequisites
+and secrets are in [docs/deployment.md](docs/deployment.md).
+
+## Evaluate
+
+```bash
+cd evaluation && pip install -r requirements.txt
+python run_eval.py --base-url http://localhost:8000
+```
+
+Reports hallucination rate, accuracy, retrieval hit rate and latency
+percentiles; see [evaluation/README.md](evaluation/README.md).
 
 ## License
 
