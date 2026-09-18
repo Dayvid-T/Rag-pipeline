@@ -1,0 +1,18 @@
+{"id": "rag-01", "question": "What does Retrieval-Augmented Generation combine?", "reference_answer": "A retriever with a language model.", "expected_source": "sample.txt"}
+{"id": "rag-02", "question": "What is the retriever's job in a RAG pipeline?", "reference_answer": "It finds relevant chunks of text, which the model then uses to answer questions grounded in real source material.", "expected_source": "sample.txt"}
+{"id": "a5-01", "question": "When is Assignment 5 due?", "reference_answer": "March 18, 2026.", "expected_source": "Assignment5.pdf"}
+{"id": "a5-02", "question": "How many measurements and how many features are in the breast cancer dataset used in Assignment 5?", "reference_answer": "569 measurements of 30 features.", "expected_source": "Assignment5.pdf"}
+{"id": "a5-03", "question": "In Assignment 5, how should the breast cancer dataset be split between training and testing?", "reference_answer": "The first 100 points are used for training and the remaining 469 for testing.", "expected_source": "Assignment5.pdf"}
+{"id": "a5-04", "question": "For which values of K should KNN accuracy be reported in Assignment 5?", "reference_answer": "K = 1, 3, 5 and 7.", "expected_source": "Assignment5.pdf"}
+{"id": "a5-05", "question": "Which kernel function is used for the non-linear SVM in Assignment 5?", "reference_answer": "The Radial Basis Function (RBF) kernel, k(u,v) = exp(-gamma * ||u - v||^2).", "expected_source": "Assignment5.pdf"}
+{"id": "a5-06", "question": "According to Assignment 5, what is the most popular method for solving SVM problems?", "reference_answer": "Sequential Minimal Optimization (SMO).", "expected_source": "Assignment5.pdf"}
+{"id": "a5-07", "question": "Which theorem is the subject of questions 3 and 4 in Assignment 5?", "reference_answer": "The No Free Lunch theorem.", "expected_source": "Assignment5.pdf"}
+{"id": "a5-08", "question": "Can students use MATLAB's built-in SVM function in Assignment 5?", "reference_answer": "No, but they may use MATLAB's optimization routines.", "expected_source": "Assignment5.pdf"}
+{"id": "a6-01", "question": "When is Assignment 6 due?", "reference_answer": "March 29, 2026.", "expected_source": "_Assignment6.pdf"}
+{"id": "a6-02", "question": "Which cost function are the output activation functions in Assignment 6 combined with?", "reference_answer": "The Cross-Entropy cost function.", "expected_source": "_Assignment6.pdf"}
+{"id": "a6-03", "question": "What output activation does Assignment 6 use for classifying between more than two classes?", "reference_answer": "The Softmax activation.", "expected_source": "_Assignment6.pdf"}
+{"id": "a6-04", "question": "What activation function is used in the single-layer example in question 2 of Assignment 6?", "reference_answer": "ReLU.", "expected_source": "_Assignment6.pdf"}
+{"id": "a6-05", "question": "What kind of model is used to classify the breast cancer dataset in Assignment 6?", "reference_answer": "A feedforward neural network.", "expected_source": "_Assignment6.pdf"}
+{"id": "oos-01", "question": "What is the capital of France?", "reference_answer": "Not in the documents; the system should say it doesn't know.", "expect_abstain": true}
+{"id": "oos-02", "question": "When is Assignment 7 due?", "reference_answer": "Not in the documents; the system should say it doesn't know.", "expect_abstain": true}
+{"id": "oos-03", "question": "What grade did the student receive on Assignment 5?", "reference_answer": "Not in the documents; the system should say it doesn't know.", "expect_abstain": true}

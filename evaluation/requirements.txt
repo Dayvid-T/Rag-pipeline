@@ -1,0 +1,11 @@
+# HTTP client for hitting the /query API
+httpx==0.28.1
+
+# LLM-as-judge (same provider as the pipeline; free tier)
+google-genai==2.22.0
+
+# Config
+python-dotenv==1.0.1
+
+# Testing
+pytest==8.3.3
