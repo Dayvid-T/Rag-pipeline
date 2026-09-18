@@ -1,27 +1,35 @@
 from typing import List, Dict
 from pathlib import Path
-from pypdf import PdfReader
+
+import pymupdf
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+SUPPORTED_SUFFIXES = {".txt", ".pdf"}
 
+
+def parse_document(name: str, data: bytes) -> Dict:
+    """Turn raw file bytes into {'text', 'source'}; raises ValueError if unusable."""
+    suffix = Path(name).suffix.lower()
+    if suffix == ".txt":
+        text = data.decode("utf-8", errors="replace")
+    elif suffix == ".pdf":
+        try:
+            with pymupdf.open(stream=data, filetype="pdf") as pdf:
+                text = "".join(page.get_text() for page in pdf)
+        except (RuntimeError, ValueError) as e:
+            raise ValueError(f"Could not read PDF '{name}': {e}") from e
+    else:
+        raise ValueError(f"Unsupported file type '{suffix}'; only .pdf and .txt are supported")
+    return {"text": text, "source": name}
 
 
 def load_documents(path: str) -> List[Dict]:
-
     folder = Path(path)
-    documents = []
-    for f in folder.iterdir():
-        if f.suffix.lower() == ".txt":
-            #this is the palce holder
-            documents.append({"text": f.read_text(), "source": f.name})
-
-        elif f.suffix.lower() == ".pdf":
-            reader = PdfReader(f)
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text()
-            documents.append({"text": text, "source": f.name})
-    return documents
+    return [
+        parse_document(f.name, f.read_bytes())
+        for f in folder.iterdir()
+        if f.suffix.lower() in SUPPORTED_SUFFIXES
+    ]
 
 
 def chunk_documents(documents: List[Dict]) -> List[Dict]:

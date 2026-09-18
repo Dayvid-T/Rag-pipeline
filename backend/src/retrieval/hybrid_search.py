@@ -1,19 +1,17 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from pinecone import Pinecone
 from rank_bm25 import BM25Okapi
 
 from src.config import settings
-from src.ingestion.loader import load_documents, chunk_documents
 
 # Pinecone's hosted embedding model. Outputs 1024-dimension vectors - the
 # index was created with dimension=1024 specifically to match this.
 EMBEDDING_MODEL = "multilingual-e5-large"
 
-# Where sparse_search rebuilds its local keyword index from. Must be the
-# same folder embed_chunks was last pointed at, so dense and sparse search
-# are searching the same corpus.
-DATA_DIR = "data"
+# Pinecone's inference API caps a single embed call at 96 inputs for this
+# model; upserts are batched the same way.
+EMBED_BATCH = 96
 
 # How many results RRF pulls from each ranker before fusing - wider than the
 # final top_k so a chunk that's #1 in one ranker but absent from the other's
@@ -25,13 +23,18 @@ FETCH_MULTIPLIER = 3
 # literature.
 RRF_K = 60
 
-# Lazily-created connections/indexes, shared across calls in this process.
-# Created on first use (not at import time) so importing this module never
-# makes a network call or reads the local data/ folder on its own.
+# Lazily-created connection, shared across calls in this process. Created on
+# first use (not at import time) so importing this module never makes a
+# network call on its own.
 _pc = None
 _index = None
-_bm25 = None
-_bm25_chunks = None
+
+# In-process copy of the corpus (chunk text + source), loaded from Pinecone
+# on first use. embed_chunks/delete_source keep it in sync so the BM25 index
+# reflects an upload immediately, even though Pinecone's own reads are only
+# eventually consistent.
+_corpus: Optional[List[Dict]] = None
+_bm25: Optional[BM25Okapi] = None
 
 
 def _get_index():
@@ -44,42 +47,108 @@ def _get_index():
     return _index
 
 
-def _get_bm25():
-    """
-    Build (once, lazily) a local BM25 index over the same chunks
-    embed_chunks was last pointed at, for sparse_search to query.
-    """
-    global _bm25, _bm25_chunks
-    if _bm25 is None:
-        _bm25_chunks = chunk_documents(load_documents(DATA_DIR))
-        tokenized = [chunk["text"].lower().split() for chunk in _bm25_chunks]
-        _bm25 = BM25Okapi(tokenized)
-    return _bm25, _bm25_chunks
+def _fetch_corpus() -> List[Dict]:
+    """Pull every stored chunk's text and source out of Pinecone."""
+    index = _get_index()
+    chunks = []
+    for id_batch in index.list():
+        fetched = index.fetch(ids=list(id_batch))
+        for vector_id, vector in fetched.vectors.items():
+            chunks.append({
+                "chunk_id": vector_id,
+                "text": vector.metadata["text"],
+                "source": vector.metadata["source"],
+            })
+    return chunks
+
+
+def _rebuild_bm25() -> None:
+    global _bm25
+    if _corpus:
+        _bm25 = BM25Okapi([chunk["text"].lower().split() for chunk in _corpus])
+    else:
+        _bm25 = None
+
+
+def _get_corpus() -> List[Dict]:
+    global _corpus
+    if _corpus is None:
+        _corpus = _fetch_corpus()
+        _rebuild_bm25()
+    return _corpus
+
+
+def _batches(items: List, size: int):
+    for start in range(0, len(items), size):
+        yield items[start:start + size]
 
 
 def embed_chunks(chunks: List[Dict]) -> None:
     """Embed each chunk's text and upsert it into the Pinecone index."""
+    global _corpus
     if not chunks:
         return
 
     index = _get_index()
+    corpus = _get_corpus()
 
-    texts = [chunk["text"] for chunk in chunks]
-    result = _pc.inference.embed(
-        model=EMBEDDING_MODEL,
-        inputs=texts,
-        parameters={"input_type": "passage", "truncate": "END"},
-    )
+    for batch in _batches(chunks, EMBED_BATCH):
+        result = _pc.inference.embed(
+            model=EMBEDDING_MODEL,
+            inputs=[chunk["text"] for chunk in batch],
+            parameters={"input_type": "passage", "truncate": "END"},
+        )
+        index.upsert(vectors=[
+            {
+                "id": chunk["chunk_id"],
+                "values": embedding["values"],
+                "metadata": {"text": chunk["text"], "source": chunk["source"]},
+            }
+            for chunk, embedding in zip(batch, result.data)
+        ])
 
-    vectors = [
-        {
-            "id": chunk["chunk_id"],
-            "values": embedding["values"],
-            "metadata": {"text": chunk["text"], "source": chunk["source"]},
+    by_id = {chunk["chunk_id"]: chunk for chunk in corpus}
+    for chunk in chunks:
+        by_id[chunk["chunk_id"]] = {
+            "chunk_id": chunk["chunk_id"],
+            "text": chunk["text"],
+            "source": chunk["source"],
         }
-        for chunk, embedding in zip(chunks, result.data)
-    ]
-    index.upsert(vectors=vectors)
+    _corpus = list(by_id.values())
+    _rebuild_bm25()
+
+
+def delete_source(source: str) -> int:
+    """Remove every chunk of `source` from the index; returns how many were removed."""
+    global _corpus
+    index = _get_index()
+    corpus = _get_corpus()
+
+    ids = [vector_id for id_batch in index.list(prefix=f"{source}::") for vector_id in id_batch]
+    if ids:
+        index.delete(ids=ids)
+
+    remaining = [chunk for chunk in corpus if chunk["source"] != source]
+    removed_from_cache = len(corpus) - len(remaining)
+    _corpus = remaining
+    _rebuild_bm25()
+    return max(len(ids), removed_from_cache)
+
+
+def get_source_text(source: str, max_chars: Optional[int] = None) -> str:
+    """Reassemble a document's text from its chunks, in order; '' if unknown."""
+    chunks = [c for c in _get_corpus() if c["source"] == source]
+    chunks.sort(key=lambda c: int(c["chunk_id"].rsplit("::", 1)[1]))
+    text = "\n".join(c["text"] for c in chunks)
+    return text[:max_chars] if max_chars else text
+
+
+def list_sources() -> List[Dict]:
+    """Return [{'source', 'chunks'}] for every indexed document, sorted by name."""
+    counts: Dict[str, int] = {}
+    for chunk in _get_corpus():
+        counts[chunk["source"]] = counts.get(chunk["source"], 0) + 1
+    return [{"source": source, "chunks": counts[source]} for source in sorted(counts)]
 
 
 def dense_search(query: str, top_k: int = 5) -> List[Dict]:
@@ -107,11 +176,13 @@ def dense_search(query: str, top_k: int = 5) -> List[Dict]:
 
 
 def sparse_search(query: str, top_k: int = 5) -> List[Dict]:
-    """Keyword search: BM25 over the locally-chunked documents."""
-    bm25, chunks = _get_bm25()
+    """Keyword search: BM25 over the corpus cached from Pinecone."""
+    corpus = _get_corpus()
+    if _bm25 is None:
+        return []
 
-    scores = bm25.get_scores(query.lower().split())
-    ranked = sorted(zip(chunks, scores), key=lambda pair: pair[1], reverse=True)
+    scores = _bm25.get_scores(query.lower().split())
+    ranked = sorted(zip(corpus, scores), key=lambda pair: pair[1], reverse=True)
 
     return [
         {

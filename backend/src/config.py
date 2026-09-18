@@ -20,6 +20,7 @@ class Settings:
     pinecone_environment: str = os.getenv("PINECONE_ENVIRONMENT", "")
     app_port: int = int(os.getenv("APP_PORT", "8000"))
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    static_dir: str = os.getenv("STATIC_DIR", "../frontend/dist")
 
 
 settings = Settings()
