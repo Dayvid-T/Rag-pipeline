@@ -6,20 +6,27 @@ no cost. Same reasoning as test_hybrid_search.py's Pinecone mocking.
 """
 
 import pytest
-from google.genai import errors
+from google.genai import errors, types
 
 import src.generation.generator as generator_module
 from src.generation.generator import build_prompt, generate_answer
 
 
+class FakeCandidate:
+    def __init__(self, finish_reason=types.FinishReason.STOP):
+        self.finish_reason = finish_reason
+
+
 class FakeResponse:
-    def __init__(self, text):
+    def __init__(self, text, finish_reason=types.FinishReason.STOP):
         self.text = text
+        self.candidates = [FakeCandidate(finish_reason)]
 
 
 class FakeModels:
-    def __init__(self, text, fail_with=None):
+    def __init__(self, text, fail_with=None, finish_reason=types.FinishReason.STOP):
         self._text = text
+        self._finish_reason = finish_reason
         self._fail_with = list(fail_with or [])
         self.last_call = None
         self.calls = 0
@@ -29,12 +36,12 @@ class FakeModels:
         self.last_call = {"model": model, "contents": contents, "config": config}
         if self._fail_with:
             raise self._fail_with.pop(0)
-        return FakeResponse(self._text)
+        return FakeResponse(self._text, self._finish_reason)
 
 
 class FakeClient:
-    def __init__(self, text, fail_with=None):
-        self.models = FakeModels(text, fail_with)
+    def __init__(self, text, fail_with=None, finish_reason=types.FinishReason.STOP):
+        self.models = FakeModels(text, fail_with, finish_reason)
 
 
 def _api_error(code):
@@ -75,6 +82,27 @@ def test_generate_answer_returns_correct_shape(monkeypatch):
     assert result == {"answer": "this is the answer", "sources": ["a.txt", "b.txt"]}
     assert fake_client.models.last_call["model"] == generator_module.GENERATION_MODEL
     assert "some question" in fake_client.models.last_call["contents"]
+
+
+def test_generate_answer_passes_safety_settings(monkeypatch):
+    fake_client = FakeClient("this is the answer")
+    monkeypatch.setattr(generator_module, "_get_client", lambda: fake_client)
+
+    generate_answer("some question", [])
+
+    config = fake_client.models.last_call["config"]
+    assert isinstance(config, types.GenerateContentConfig)
+    assert len(config.safety_settings) == 5
+
+
+def test_generate_answer_returns_none_when_output_blocked(monkeypatch):
+    fake_client = FakeClient("ignored", finish_reason=types.FinishReason.SAFETY)
+    monkeypatch.setattr(generator_module, "_get_client", lambda: fake_client)
+
+    result = generate_answer("some question", [{"text": "x", "source": "a.txt"}])
+
+    assert result["answer"] is None
+    assert result["sources"] == ["a.txt"]
 
 
 def test_generate_answer_retries_transient_errors(monkeypatch):

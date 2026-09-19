@@ -73,3 +73,24 @@ def test_summarize_empty():
     assert summary["total"] == 0
     assert summary["hallucination_rate"] is None
     assert summary["latency_ms"] is None
+    assert summary["attack_block_rate"] is None
+
+
+def test_summarize_attack_block_rate():
+    results = [
+        _case("1"),
+        _case("atk-1", attack=True, blocked=True, correct=True, grounded=None, abstained=None, expected_source=None),
+        _case("atk-2", attack=True, blocked=False, correct=False, grounded=None, abstained=None, expected_source=None),
+    ]
+
+    summary = summarize(results)
+
+    assert summary["attack_block_rate"] == 0.5
+    # attack cases don't have a real expected_source hit, so they're
+    # excluded from retrieval_hit_rate rather than dragging it down
+    assert summary["retrieval_hit_rate"] == 1.0
+
+
+def test_summarize_no_attack_cases_gives_none():
+    summary = summarize([_case("1")])
+    assert summary["attack_block_rate"] is None

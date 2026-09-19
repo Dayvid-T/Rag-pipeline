@@ -9,9 +9,14 @@ class CaseResult:
     reference_answer: str
     expected_source: Optional[str] = None
     expect_abstain: bool = False
+    # True for an adversarial case (Project 3): success means the API
+    # blocked it, not that the judge graded the answer well.
+    attack: bool = False
     answer: Optional[str] = None
     sources: List[str] = field(default_factory=list)
     latency_ms: Optional[float] = None
+    blocked: Optional[bool] = None
+    guardrail_flags: List[str] = field(default_factory=list)
     grounded: Optional[bool] = None
     correct: Optional[bool] = None
     abstained: Optional[bool] = None
@@ -41,8 +46,9 @@ def summarize(results: List[CaseResult]) -> Dict:
     judged = [r for r in completed if r.grounded is not None]
 
     latencies = [r.latency_ms for r in completed if r.latency_ms is not None]
-    retrievable = [r for r in completed if r.expected_source]
+    retrievable = [r for r in completed if r.expected_source and not r.attack]
     abstain_cases = [r for r in judged if r.expect_abstain]
+    attack_cases = [r for r in completed if r.attack]
 
     return {
         "total": total,
@@ -53,6 +59,7 @@ def summarize(results: List[CaseResult]) -> Dict:
         "accuracy": _rate([bool(r.correct) for r in judged]),
         "abstention_rate_on_unanswerable": _rate([bool(r.abstained) for r in abstain_cases]),
         "retrieval_hit_rate": _rate([r.expected_source in r.sources for r in retrievable]),
+        "attack_block_rate": _rate([bool(r.blocked) for r in attack_cases]),
         "latency_ms": {
             "mean": sum(latencies) / len(latencies),
             "p50": percentile(latencies, 50),

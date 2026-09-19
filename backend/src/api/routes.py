@@ -16,6 +16,8 @@ from pydantic import BaseModel
 
 from src.config import settings
 from src.citation import citation
+from src.guardrails import audit, injection
+from src.guardrails.safety import REFUSAL_MESSAGE
 from src.ingestion.loader import chunk_documents, parse_document
 from src.retrieval.hybrid_search import delete_source, embed_chunks, hybrid_search, list_sources
 from src.generation.generator import generate_answer
@@ -35,6 +37,10 @@ class QueryResponse(BaseModel):
     # The retrieved passages the answer was grounded in. Exposed so the
     # evaluation suite (Project 2) can judge faithfulness at the API boundary.
     contexts: list[str] = []
+    # True when a guardrail (Project 3) blocked the question, filtered a
+    # retrieved passage, or Gemini's own safety filter blocked the output.
+    blocked: bool = False
+    guardrail_flags: list[str] = []
 
 
 class DocumentInfo(BaseModel):
@@ -79,21 +85,70 @@ def query(request: QueryRequest) -> QueryResponse:
     """
     Main endpoint: takes a question, retrieves relevant chunks, and returns
     a grounded answer.
+
+    Three guardrails sit at this boundary: a high-severity injection match
+    on the question blocks the request before retrieval or generation even
+    run; any flagged retrieved passage is dropped from the context instead
+    of failing the whole request; and Gemini's own safety filtering can
+    still block the generated output. Every block is written to the audit
+    log with the rule that fired.
     """
+    question_verdict = injection.scan(request.question)
+    if question_verdict.flagged and question_verdict.severity == "high":
+        audit.log_event(
+            "blocked_question",
+            question=request.question,
+            matches=question_verdict.matches,
+        )
+        return QueryResponse(
+            answer="This question was blocked - it looks like a prompt-injection attempt.",
+            blocked=True,
+            guardrail_flags=question_verdict.matches,
+        )
+
     try:
         chunks = hybrid_search(request.question, top_k=5)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrieval failed: {e}")
 
+    safe_chunks = []
+    filtered_flags: list[str] = []
+    for chunk in chunks:
+        verdict = injection.scan(chunk["text"])
+        if verdict.flagged:
+            filtered_flags.extend(verdict.matches)
+            audit.log_event(
+                "filtered_passage",
+                source=chunk["source"],
+                matches=verdict.matches,
+                severity=verdict.severity,
+            )
+            continue
+        safe_chunks.append(chunk)
+
     try:
-        result = generate_answer(request.question, chunks)
+        result = generate_answer(request.question, safe_chunks)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
+
+    contexts = [chunk["text"] for chunk in safe_chunks]
+
+    if result["answer"] is None:
+        audit.log_event("blocked_output", question=request.question)
+        return QueryResponse(
+            answer=REFUSAL_MESSAGE,
+            sources=result["sources"],
+            contexts=contexts,
+            blocked=True,
+            guardrail_flags=["output_safety"],
+        )
 
     return QueryResponse(
         answer=result["answer"],
         sources=result["sources"],
-        contexts=[chunk["text"] for chunk in chunks],
+        contexts=contexts,
+        blocked=False,
+        guardrail_flags=sorted(set(filtered_flags)),
     )
 
 

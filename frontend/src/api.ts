@@ -2,6 +2,10 @@ export interface QueryResponse {
   answer: string;
   sources: string[];
   contexts: string[];
+  // Guardrails (Project 3): true when the question was blocked, a
+  // retrieved passage was filtered, or output safety blocked the answer.
+  blocked: boolean;
+  guardrail_flags: string[];
 }
 
 export interface QueryResult extends QueryResponse {

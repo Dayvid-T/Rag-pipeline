@@ -13,6 +13,9 @@ const questionInput = document.getElementById("question") as HTMLTextAreaElement
 const askButton = document.getElementById("ask-button") as HTMLButtonElement;
 const emptyEl = document.getElementById("empty") as HTMLElement;
 const result = document.getElementById("result") as HTMLElement;
+const guardrailNotice = document.getElementById("guardrail-notice") as HTMLElement;
+const guardrailTitle = document.getElementById("guardrail-title") as HTMLElement;
+const guardrailDetail = document.getElementById("guardrail-detail") as HTMLElement;
 const answerEl = document.getElementById("answer") as HTMLElement;
 const sourcesEl = document.getElementById("sources") as HTMLUListElement;
 const contextsEl = document.getElementById("contexts") as HTMLOListElement;
@@ -44,6 +47,26 @@ function renderList(container: HTMLElement, items: string[]) {
   );
 }
 
+function renderGuardrailNotice(blocked: boolean, flags: string[]) {
+  if (blocked) {
+    guardrailNotice.classList.remove("is-filtered");
+    guardrailNotice.classList.add("is-blocked");
+    guardrailTitle.textContent = "Blocked by a guardrail";
+    guardrailDetail.textContent = flags.length
+      ? `Flagged: ${flags.join(", ")}`
+      : "This request was refused before an answer was generated.";
+    guardrailNotice.hidden = false;
+  } else if (flags.length > 0) {
+    guardrailNotice.classList.remove("is-blocked");
+    guardrailNotice.classList.add("is-filtered");
+    guardrailTitle.textContent = "A retrieved passage was filtered";
+    guardrailDetail.textContent = `Excluded from the answer for: ${flags.join(", ")}`;
+    guardrailNotice.hidden = false;
+  } else {
+    guardrailNotice.hidden = true;
+  }
+}
+
 async function submit() {
   const question = questionInput.value.trim();
   if (!question) return;
@@ -55,6 +78,7 @@ async function submit() {
     answerEl.textContent = data.answer;
     renderList(sourcesEl, data.sources);
     renderList(contextsEl, data.contexts);
+    renderGuardrailNotice(data.blocked, data.guardrail_flags);
     latencyEl.textContent = formatLatency(data.latencyMs);
     emptyEl.hidden = true;
     result.hidden = false;

@@ -5,6 +5,7 @@ from google import genai
 from google.genai import errors
 
 from src.config import settings
+from src.guardrails.safety import extract_text, safety_config
 
 GENERATION_MODEL = "gemini-3.1-flash-lite"
 
@@ -57,9 +58,14 @@ def generate_with_retry(client, prompt: str, config=None):
 
 
 def generate_answer(query: str, retrieved_chunks: List[Dict]) -> Dict:
-    """Call the LLM and return {'answer': ..., 'sources': [...]}."""
+    """
+    Call the LLM and return {'answer': ..., 'sources': [...]}.
+
+    `answer` is None when Gemini's own safety filtering blocked the output
+    (see guardrails/safety.py) - the caller decides what to show for that.
+    """
     prompt = build_prompt(query, retrieved_chunks)
-    response = generate_with_retry(_get_client(), prompt)
+    response = generate_with_retry(_get_client(), prompt, config=safety_config())
 
     sources = sorted({chunk["source"] for chunk in retrieved_chunks})
-    return {"answer": response.text, "sources": sources}
+    return {"answer": extract_text(response), "sources": sources}

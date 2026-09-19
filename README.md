@@ -4,10 +4,11 @@ A containerized Retrieval-Augmented Generation (RAG) pipeline that answers
 questions over a set of documents, using hybrid (semantic + keyword) search
 and deployed on AWS through managed PaaS/SaaS services.
 
-This repo holds **Project 1** (the working system) and **Project 2** (an
-automated evaluation suite measuring hallucination rate and latency) of a
-three-project series building toward AI Security & Governance. Project 3
-adds prompt-injection guardrails and bias filtering at the API boundary.
+This repo holds all three projects of a series building toward AI
+Security & Governance: **Project 1**, the working system; **Project 2**,
+an automated evaluation suite measuring hallucination rate and latency;
+and **Project 3**, prompt-injection guardrails and output safety filtering
+at the API boundary, measured by the same evaluation suite.
 
 ## Repo layout
 
@@ -19,11 +20,12 @@ backend/
     retrieval/hybrid_search.py  # Pinecone dense + BM25 sparse, RRF fusion
     generation/generator.py     # grounded answer generation (Gemini)
     citation/citation.py        # IEEE / APA reference generation per document
+    guardrails/                 # Project 3: injection detection, output safety, audit log
     api/routes.py               # FastAPI app: /query, /documents, /health, static UI
   data/                         # local documents for bulk indexing (gitignored)
   tests/
 frontend/                       # Vite + TypeScript UI, built into the image
-evaluation/                     # Project 2: eval suite (see evaluation/README.md)
+evaluation/                     # Project 2+3: eval suite (see evaluation/README.md)
 scripts/deploy.sh               # ECR push + App Runner create/update
 Dockerfile                      # multi-stage: build frontend, run API
 docs/architecture.md            # flow + service-model choices
@@ -61,6 +63,12 @@ Each document also has a **Cite** button (`GET /documents/{source}/citation`)
 that detects title/authors/year with Gemini and formats a reference in
 IEEE and APA 7 style to copy.
 
+`/query` runs through guardrails before and after generation: a
+prompt-injection attempt in the question is blocked outright, a match in a
+retrieved passage is dropped from that answer's context, and Gemini's own
+safety filtering can still block the output. Every block is written to a
+structured audit log. See [docs/architecture.md](docs/architecture.md#guardrails-project-3).
+
 ## Tests
 
 ```bash
@@ -91,8 +99,8 @@ cd evaluation && pip install -r requirements.txt
 python run_eval.py --base-url http://localhost:8000
 ```
 
-Reports hallucination rate, accuracy, retrieval hit rate and latency
-percentiles; see [evaluation/README.md](evaluation/README.md).
+Reports hallucination rate, accuracy, retrieval hit rate, attack block
+rate and latency percentiles; see [evaluation/README.md](evaluation/README.md).
 
 ## License
 

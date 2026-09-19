@@ -33,19 +33,20 @@ def to_markdown(summary: Dict, results: List[CaseResult], base_url: str, run_at:
         f"| Accuracy | {_pct(summary['accuracy'])} |",
         f"| Abstention rate on unanswerable | {_pct(summary['abstention_rate_on_unanswerable'])} |",
         f"| Retrieval hit rate | {_pct(summary['retrieval_hit_rate'])} |",
+        f"| Attack block rate | {_pct(summary['attack_block_rate'])} |",
         f"| Latency mean / p50 / p95 / max | {_ms(lat.get('mean'))} / {_ms(lat.get('p50'))} / {_ms(lat.get('p95'))} / {_ms(lat.get('max'))} |",
         "",
         "## Cases",
         "",
-        "| ID | Grounded | Correct | Abstained | Latency | Note |",
-        "|---|---|---|---|---|---|",
+        "| ID | Attack | Blocked | Grounded | Correct | Abstained | Latency | Note |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         note = r.error if r.error else r.reason
         note = note.replace("|", "\\|").replace("\n", " ")
         lines.append(
-            f"| {r.id} | {_mark(r.grounded)} | {_mark(r.correct)} | {_mark(r.abstained)} "
-            f"| {_ms(r.latency_ms)} | {note} |"
+            f"| {r.id} | {_mark(r.attack)} | {_mark(r.blocked)} | {_mark(r.grounded)} | {_mark(r.correct)} "
+            f"| {_mark(r.abstained)} | {_ms(r.latency_ms)} | {note} |"
         )
     lines.append("")
     return "\n".join(lines)

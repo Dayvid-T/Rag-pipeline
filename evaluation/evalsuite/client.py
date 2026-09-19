@@ -30,4 +30,8 @@ class RagClient:
             "sources": body.get("sources", []),
             "contexts": body.get("contexts", []),
             "latency_ms": latency_ms,
+            # Guardrails (Project 3): set when the question was blocked, a
+            # retrieved passage was filtered, or output safety blocked the answer.
+            "blocked": body.get("blocked", False),
+            "guardrail_flags": body.get("guardrail_flags", []),
         }

@@ -7,6 +7,7 @@ same code behaves correctly locally, in Docker, and in App Runner without
 being edited.
 """
 
+import logging
 import os
 from dotenv import load_dotenv
 
@@ -24,3 +25,8 @@ class Settings:
 
 
 settings = Settings()
+
+# Without this, the root logger sits at WARNING with no handler, so every
+# logger.info() call - including the guardrails audit log - is silently
+# dropped rather than reaching stdout / the container's log driver.
+logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
